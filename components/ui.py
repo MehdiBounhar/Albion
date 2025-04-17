@@ -14,14 +14,23 @@ def get_hours_ago(timestamp_str: str) -> float:
     return delta.total_seconds() / 3600
 
 
-def style_time_cell(hours: float) -> str:
+def style_time_cell(time_str: str) -> str:
     """Return CSS style based on how old the data is"""
-    if hours <= 7:
-        return "color: #00FF00"  # Green
-    elif hours <= 16:
-        return "color: #FFA500"  # Orange
-    else:
-        return "color: #FF0000"  # Red
+    # Handle minute cases
+    if "m ago" in time_str:
+        return "color: #00FF00"  # Green for all minute-based times
+
+    # Handle hour cases
+    try:
+        hours = float(time_str.split("h")[0])
+        if hours <= 7:
+            return "color: #00FF00"  # Green
+        elif hours <= 16:
+            return "color: #FFA500"  # Orange
+        else:
+            return "color: #FF0000"  # Red
+    except:
+        return ""
 
 
 def format_time_ago(hours: float) -> str:
@@ -86,7 +95,7 @@ def display_market_prices(df: pd.DataFrame, item_id: str):
     styled_df = display_df.style.apply(
         lambda x: [
             (
-                style_time_cell(float(val.split()[0]))
+                style_time_cell(val)
                 if isinstance(val, str) and ("m ago" in val or "h ago" in val)
                 else ""
             )
@@ -123,10 +132,10 @@ def display_analysis_results(opportunities: List[Dict]):
     )
 
     # Display top 11 most profitable opportunities in a 3x4 grid
-    st.subheader("🏆 Top 11 Most Profitable Opportunities")
+    st.subheader("🏆 Top 10 Most Profitable Opportunities")
 
     # Split opportunities into rows of 3
-    for i in range(0, min(12, len(sorted_opportunities)), 3):
+    for i in range(0, min(11, len(sorted_opportunities)), 3):
         cols = st.columns(3)
         row_opportunities = sorted_opportunities[i : min(i + 3, 11)]
         for col, opp in zip(cols, row_opportunities):
@@ -169,7 +178,7 @@ def display_analysis_results(opportunities: List[Dict]):
     styled_df = df_opportunities.style.apply(
         lambda x: [
             (
-                style_time_cell(float(val.split()[0]))
+                style_time_cell(val)
                 if isinstance(val, str) and ("m ago" in val or "h ago" in val)
                 else ""
             )
@@ -210,3 +219,82 @@ def display_opportunity_card(item_id: str, data: Dict):
             """,
             unsafe_allow_html=False,
         )
+
+
+def display_black_market_results(opportunities: List[Dict]):
+    if not opportunities:
+        st.info("No profitable Black Market opportunities found.")
+        return
+
+    # Sort opportunities by profit
+    sorted_opportunities = sorted(
+        opportunities, key=lambda x: x["profit"], reverse=True
+    )
+
+    # Display top 11 most profitable opportunities in a 3x4 grid
+    st.subheader("🏴‍☠️ Top Black Market Flips")
+
+    # Split opportunities into rows of 3
+    for i in range(0, min(11, len(sorted_opportunities)), 3):
+        cols = st.columns(3)
+        row_opportunities = sorted_opportunities[i : min(i + 3, 11)]
+        for col, opp in zip(cols, row_opportunities):
+            with col:
+                display_opportunity_card(opp["item_id"], opp)
+
+    # Display full table of opportunities
+    st.subheader("📊 All Black Market Opportunities")
+    df_opportunities = pd.DataFrame(sorted_opportunities)
+
+    # Add last updated columns
+    if "buy_price_date" in df_opportunities.columns:
+        df_opportunities["buy_updated"] = df_opportunities["buy_price_date"].apply(
+            lambda x: format_time_ago(get_hours_ago(x)) if x else "N/A"
+        )
+    if "sell_price_date" in df_opportunities.columns:
+        df_opportunities["sell_updated"] = df_opportunities["sell_price_date"].apply(
+            lambda x: format_time_ago(get_hours_ago(x)) if x else "N/A"
+        )
+
+    # Reorder and rename columns
+    columns = [
+        "item_id",
+        "profit",
+        "buy_city",
+        "buy_price",
+        "buy_updated",
+        "sell_city",
+        "sell_price",
+        "sell_updated",
+    ]
+    df_opportunities = df_opportunities[columns]
+
+    # Create styled dataframe
+    styled_df = df_opportunities.style.apply(
+        lambda x: [
+            (
+                style_time_cell(val)
+                if isinstance(val, str) and ("m ago" in val or "h ago" in val)
+                else ""
+            )
+            for val in x
+        ],
+        axis=0,
+    )
+
+    # Display the styled dataframe
+    st.dataframe(
+        styled_df,
+        use_container_width=True,
+        column_config={
+            "item_id": "Item",
+            "profit": st.column_config.NumberColumn("Profit (Silver)", format="%d"),
+            "buy_city": "Buy Location",
+            "buy_price": st.column_config.NumberColumn("Buy Price", format="%d"),
+            "buy_updated": "Buy Updated",
+            "sell_city": "Sell Location",
+            "sell_price": st.column_config.NumberColumn("Sell Price", format="%d"),
+            "sell_updated": "Sell Updated",
+        },
+        hide_index=True,
+    )

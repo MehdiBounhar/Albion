@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 import requests
+import json
 from typing import Dict, List, Optional
 from utils.data_fetcher import DataFetcher
 from config.constants import RESOURCE_TYPES, TIERS, ENCHANTMENTS, CITIES, BASE_URL
@@ -58,7 +59,8 @@ class MarketAnalyzer:
             for t in TIERS
             for e in ENCHANTMENTS
         ]
-
+        with open("all_item_ids.txt", "w") as file:
+            file.write("\n".join(all_item_ids))
         opportunities = []
         progress_bar = st.progress(0)
         total_batches = (len(all_item_ids) + 49) // 50  # Round up division
@@ -87,38 +89,81 @@ class MarketAnalyzer:
 
     @staticmethod
     def _run_black_market_analysis() -> List[Dict]:
+        # Load items from JSON
+        try:
+            with open("config/items_cleaned.json", "r", encoding="utf-8") as f:
+                items_data = json.load(f)
+        except FileNotFoundError:
+            st.error(
+                "Items database not found. Please ensure items_cleaned.json exists."
+            )
+            return []
+
         opportunities = []
         progress_bar = st.progress(0)
-        total_items = len(RESOURCE_TYPES) * len(TIERS) * len(ENCHANTMENTS)
 
-        for idx, (resource, tier, enchant) in enumerate(
-            [(r, t, e) for r in RESOURCE_TYPES for t in TIERS for e in ENCHANTMENTS]
-        ):
-            item_id = DataFetcher.construct_item_id(resource, tier, enchant)
-            url = f"{BASE_URL}{item_id}.json?locations={','.join(CITIES)}&qualities=1"
-            df = DataFetcher.fetch_prices(url)
+        # Get unique item names
+        unique_items = [item["UniqueName"] for item in items_data]
+        total_batches = (len(unique_items) + 49) // 50  # Round up division
 
-            if not df.empty:
-                black_market_data = df[df["city"] == "Black Market"]
-                other_cities = df[df["city"] != "Black Market"]
+        for batch_num, i in enumerate(range(0, len(unique_items), 50)):
+            batch_ids = unique_items[i : i + 50]
+            url = f"{BASE_URL}{','.join(batch_ids)}.json?locations={','.join(CITIES)}&qualities=1"
 
-                if not black_market_data.empty and not other_cities.empty:
-                    bm_buy_price = black_market_data.iloc[0]["buy_price_max"]
-                    best_sell = other_cities.sort_values("sell_price_min").head(1)
-                    sell_price = best_sell.iloc[0]["sell_price_min"]
+            response = requests.get(url)
+            if response.status_code != 200:
+                continue
 
-                    if bm_buy_price > sell_price:
+
+            testfetch_prices_for_black_market = DataFetcher.fetch_prices_for_black_market(
+                url
+            )
+            df_prices = pd.DataFrame(testfetch_prices_for_black_market)
+            df_prices.to_csv("testfetch_prices_for_black_market.csv", index=False)
+            
+            
+            df_all = pd.DataFrame(response.json())
+            df_all.to_csv("df_all.csv", index=False)
+            if df_all.empty:
+                continue
+
+            # Process each item in the batch
+            for item in df_all["item_id"].unique():
+                item_df = df_all[df_all["item_id"] == item]
+
+                # Get Black Market data
+                bm_data = item_df[item_df["city"] == "Black Market"]
+                other_cities = item_df[item_df["city"] != "Black Market"]
+
+                if not bm_data.empty and not other_cities.empty:
+                    # Black Market buy price (what they pay)
+                    bm_buy_price = bm_data.iloc[0]["buy_price_max"]
+
+                    # Find best sell price in other cities
+                    best_sell = other_cities.sort_values("buy_price_min").head(1)
+                    market_price = best_sell.iloc[0]["buy_price_min"]
+
+                    # Calculate profit
+                    if bm_buy_price > market_price and market_price > 0:
                         opportunities.append(
                             {
-                                "item_id": item_id,
+                                "item_id": item,
                                 "buy_city": best_sell.iloc[0]["city"],
-                                "buy_price": sell_price,
+                                "buy_price": market_price,
+                                "buy_price_date": best_sell.iloc[0][
+                                    "buy_price_min_date"
+                                ],
                                 "sell_city": "Black Market",
                                 "sell_price": bm_buy_price,
-                                "profit": bm_buy_price - sell_price,
+                                "sell_price_date": bm_data.iloc[0][
+                                    "buy_price_max_date"
+                                ],
+                                "profit": bm_buy_price - market_price,
                             }
                         )
 
-            progress_bar.progress((idx + 1) / total_items)
+            progress_bar.progress((batch_num + 1) / total_batches)
 
+        # Sort opportunities by profit
+        opportunities.sort(key=lambda x: x["profit"], reverse=True)
         return opportunities
