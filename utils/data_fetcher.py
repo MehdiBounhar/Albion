@@ -28,6 +28,25 @@ class DataFetcher:
         return pd.DataFrame()
     
     @staticmethod
+    def fetch_artifact_prices(url: str) -> pd.DataFrame:
+        """Fetch prices with lenient date filtering specifically for artifact foundry."""
+        response = requests.get(url)
+        if response.status_code == 200:
+            df = pd.DataFrame(response.json())
+            if not df.empty:
+                # Only filter out rows where all dates are invalid
+                date_columns = [col for col in df.columns if col.endswith('_date')]
+                if date_columns:
+                    # Create a mask for valid rows (at least one valid date)
+                    valid_rows = pd.Series(False, index=df.index)
+                    for col in date_columns:
+                        valid_rows |= (df[col] != "0001-01-01T00:00:00")
+                    df = df[valid_rows]
+            return df
+        print(f"Failed to fetch data from {url}. Status code: {response.status_code}")
+        return pd.DataFrame()
+    
+    @staticmethod
     def fetch_prices_for_black_market(
         url: str
     ) -> Optional[pd.DataFrame]:
