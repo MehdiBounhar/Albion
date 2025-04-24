@@ -104,31 +104,21 @@ class MarketAnalyzer:
 
         # Get unique item names
         unique_items = [item["UniqueName"] for item in items_data]
-        total_batches = (len(unique_items) + 49) // 50  # Round up division
 
-        for batch_num, i in enumerate(range(0, len(unique_items), 50)):
-            batch_ids = unique_items[i : i + 50]
-            url = f"{BASE_URL}{','.join(batch_ids)}.json?locations={','.join(CITIES)}&qualities=1"
+        # Initialize DataFetcher
+        data_fetcher = DataFetcher()
 
-            response = requests.get(url)
-            if response.status_code != 200:
-                continue
+        with st.spinner("Fetching Black Market data in batches..."):
+            # Fetch all data using bulk prices
+            df_all = data_fetcher.fetch_bulk_prices(unique_items)
 
-
-            testfetch_prices_for_black_market = DataFetcher.fetch_prices_for_black_market(
-                url
-            )
-            df_prices = pd.DataFrame(testfetch_prices_for_black_market)
-            df_prices.to_csv("testfetch_prices_for_black_market.csv", index=False)
-            
-            
-            df_all = pd.DataFrame(response.json())
-            df_all.to_csv("df_all.csv", index=False)
             if df_all.empty:
-                continue
+                st.warning("No data available from the market")
+                return []
 
-            # Process each item in the batch
-            for item in df_all["item_id"].unique():
+            # Process each item
+            total_items = len(df_all["item_id"].unique())
+            for idx, item in enumerate(df_all["item_id"].unique()):
                 item_df = df_all[df_all["item_id"] == item]
 
                 # Get Black Market data
@@ -140,8 +130,8 @@ class MarketAnalyzer:
                     bm_buy_price = bm_data.iloc[0]["buy_price_max"]
 
                     # Find best sell price in other cities
-                    best_sell = other_cities.sort_values("buy_price_min").head(1)
-                    market_price = best_sell.iloc[0]["buy_price_min"]
+                    best_sell = other_cities.sort_values("sell_price_min").head(1)
+                    market_price = best_sell.iloc[0]["sell_price_min"]
 
                     # Calculate profit
                     if bm_buy_price > market_price and market_price > 0:
@@ -162,7 +152,7 @@ class MarketAnalyzer:
                             }
                         )
 
-            progress_bar.progress((batch_num + 1) / total_batches)
+                progress_bar.progress((idx + 1) / total_items)
 
         # Sort opportunities by profit
         opportunities.sort(key=lambda x: x["profit"], reverse=True)

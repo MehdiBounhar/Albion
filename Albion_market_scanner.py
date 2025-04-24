@@ -1,4 +1,4 @@
-import streamlit as st  
+import streamlit as st
 from config.constants import *
 from utils.data_fetcher import DataFetcher
 from analysis.market_analyzer import MarketAnalyzer
@@ -29,7 +29,7 @@ def main():
     )
 
     with tabs[0]:
-        st.subheader("�� Market Overview")
+        st.subheader("📈 Market Overview")
         # Item selector for market overview
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -73,6 +73,7 @@ def main():
             with st.spinner("Refreshing Black Market analysis..."):
                 opportunities = MarketAnalyzer.run_market_analysis("Black Market")
                 st.session_state.black_market_opportunities = opportunities
+
 
 if __name__ == "__main__":
     main()

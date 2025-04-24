@@ -6,12 +6,22 @@ from datetime import datetime, timezone
 
 def get_hours_ago(timestamp_str: str) -> float:
     """Convert timestamp to hours ago and return hours as float"""
-    # Parse timestamp and ensure it's UTC aware
-    timestamp = pd.to_datetime(timestamp_str).tz_localize("UTC")
-    # Get current time in UTC
-    now = pd.to_datetime(datetime.now(timezone.utc))
-    delta = now - timestamp
-    return delta.total_seconds() / 3600
+    try:
+        # Parse timestamp with error handling
+        if not timestamp_str or pd.isna(timestamp_str):
+            return 0.0
+
+        # Parse timestamp and ensure it's UTC aware
+        timestamp = pd.to_datetime(timestamp_str, errors="coerce", utc=True)
+        if pd.isna(timestamp):
+            return 0.0
+
+        # Get current time in UTC
+        now = pd.to_datetime(datetime.now(timezone.utc))
+        delta = now - timestamp
+        return delta.total_seconds() / 3600
+    except Exception:
+        return 0.0
 
 
 def style_time_cell(time_str: str) -> str:
@@ -246,14 +256,14 @@ def display_black_market_results(opportunities: List[Dict]):
     st.subheader("📊 All Black Market Opportunities")
     df_opportunities = pd.DataFrame(sorted_opportunities)
 
-    # Add last updated columns
     if "buy_price_date" in df_opportunities.columns:
         df_opportunities["buy_updated"] = df_opportunities["buy_price_date"].apply(
-            lambda x: format_time_ago(get_hours_ago(x)) if x else "N/A"
+            lambda x: format_time_ago(get_hours_ago(x)) if pd.notna(x) else "N/A"
         )
     if "sell_price_date" in df_opportunities.columns:
+        # Fix typo in column name (was "ssell_price_date")
         df_opportunities["sell_updated"] = df_opportunities["sell_price_date"].apply(
-            lambda x: format_time_ago(get_hours_ago(x)) if x else "N/A"
+            lambda x: format_time_ago(get_hours_ago(x)) if pd.notna(x) else "N/A"
         )
 
     # Reorder and rename columns
