@@ -91,35 +91,33 @@ class DataFetcher:
         return None
 
     def fetch_bulk_prices(self, items: List[str]) -> pd.DataFrame:
+        """Fetch prices for multiple items in batches"""
         all_data = []
 
-        # Create batches of items
-        for i in range(0, len(items), BATCH_SIZE):
-            batch = items[i : i + BATCH_SIZE]
+        try:
+            # Get batched URLs
+            urls = self.batch_processor.create_batched_url(items, CITIES)
 
-            try:
-                url = self.batch_processor.create_batched_url(batch, CITIES)
+            # Process each URL
+            for idx, url in enumerate(urls):
                 self.batch_processor.check_rate_limits()
 
-                response = self.session.get(url)
-                if response.status_code == 200:
-                    all_data.extend(response.json())
+                try:
+                    response = self.session.get(url)
+                    if response.status_code == 200:
+                        data = response.json()
+                        all_data.extend(data)
+                        self.batch_processor.request_timestamps.append(time.time())
+                    else:
+                        st.warning(
+                            f"Batch {idx+1} failed with status code: {response.status_code}"
+                        )
+                except Exception as e:
+                    st.warning(f"Error fetching batch {idx+1}: {str(e)}")
+                    continue
 
-                # Record request timestamp
-                self.batch_processor.request_timestamps.append(time.time())
+            return pd.DataFrame(all_data) if all_data else pd.DataFrame()
 
-            except Exception as e:
-                st.warning(f"Error fetching batch {i//BATCH_SIZE + 1}: {str(e)}")
-                continue
-
-        df = pd.DataFrame(all_data)
-        if not df.empty and (
-            "sell_price_max_date"
-            or "buy_price_min_date"
-            or "buy_price_max_date" in df.columns
-        ):
-            df = df[df["sell_price_max_date"] != "0001-01-01T00:00:00"]
-            df = df[df["buy_price_min_date"] != "0001-01-01T00:00:00"]
-            df = df[df["buy_price_max_date"] != "0001-01-01T00:00:00"]
-            df = df[df["sell_price_min_date"] != "0001-01-01T00:00:00"]
-        return df
+        except Exception as e:
+            st.error(f"Failed to fetch prices: {str(e)}")
+            return pd.DataFrame()

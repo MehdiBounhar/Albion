@@ -8,6 +8,9 @@ from config.constants import RESOURCE_TYPES, TIERS, ENCHANTMENTS, CITIES, BASE_U
 
 
 class MarketAnalyzer:
+    TAX_RATE = 0.08  # 8% tax
+    SETUP_FEE = 0.025  # 2.5% setup fee
+
     @staticmethod
     def find_opportunities(df: pd.DataFrame) -> Optional[Dict]:
         if df.empty or len(df) < 2:
@@ -29,6 +32,14 @@ class MarketAnalyzer:
         if buy_price == 0 or sell_price == 0 or sell_price <= buy_price:
             return None
 
+        # Calculate profit before fees
+        profit = sell_price - buy_price
+
+        # Apply tax and setup fee
+        tax_amount = sell_price * MarketAnalyzer.TAX_RATE
+        setup_fee_amount = buy_price * MarketAnalyzer.SETUP_FEE
+        profit -= tax_amount + setup_fee_amount
+
         return {
             "buy_city": best_buy.iloc[0]["city"],
             "buy_price": buy_price,
@@ -36,7 +47,7 @@ class MarketAnalyzer:
             "sell_city": best_sell.iloc[0]["city"],
             "sell_price": sell_price,
             "sell_price_date": best_sell.iloc[0]["sell_price_min_date"],
-            "profit": sell_price - buy_price,
+            "profit": profit,
         }
 
     @staticmethod
