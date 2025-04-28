@@ -10,30 +10,50 @@ st.set_page_config(
     layout="wide"
 )
 
-def fetch_prices(item_ids: list, city: str) -> pd.DataFrame:
-    """Fetch prices for given item IDs."""
-    if city == "Average":
-        locations = CITIES
-    else:
-        locations = [city]
+def fetch_all_cities_data():
+    """Fetch and store all artifact data for all cities in session state."""
+    all_cities_data = {}
     
-    url = f"{BASE_URL}{','.join(item_ids)}.json?locations={','.join(locations)}&qualities=1"
-    df = DataFetcher.fetch_artifact_prices(url)
+    # Fetch data for each city
+    for city in CITIES:
+        url = f"{BASE_URL}{','.join(RUNE_ITEMS + SOUL_ITEMS + RELIC_ITEMS + AVALONIAN_ITEMS)}.json?locations={city}&qualities=1"
+        city_data = DataFetcher.fetch_artifact_prices(url)
+        if not city_data.empty:
+            all_cities_data[city] = city_data
     
-    if df.empty:
-        return pd.DataFrame()
+    # Store the data in session state
+    st.session_state.all_cities_data = all_cities_data
     
-    # If Average is selected, calculate average prices across all cities
-    if city == "Average":
-        df = df.groupby('item_id').agg({
+    # Calculate average prices
+    if all_cities_data:
+        all_data = pd.concat(all_cities_data.values())
+        average_data = all_data.groupby('item_id').agg({
             'sell_price_min': 'mean',
             'buy_price_max': 'mean'
         }).reset_index()
-        df['city'] = 'Average'
-    
-    return df
+        average_data['city'] = 'Average'
+        st.session_state.all_cities_data['Average'] = average_data
 
-def display_price_table(df: pd.DataFrame, title: str, expected_tiers: list, item_ids: list, city: str):
+def get_city_data(city: str) -> dict:
+    """Get artifact data for a specific city."""
+    if 'all_cities_data' not in st.session_state:
+        return {
+            'rune_data': pd.DataFrame(),
+            'soul_data': pd.DataFrame(),
+            'relic_data': pd.DataFrame(),
+            'avalonian_data': pd.DataFrame()
+        }
+    
+    city_data = st.session_state.all_cities_data.get(city, pd.DataFrame())
+    
+    return {
+        'rune_data': city_data[city_data['item_id'].isin(RUNE_ITEMS)] if not city_data.empty else pd.DataFrame(),
+        'soul_data': city_data[city_data['item_id'].isin(SOUL_ITEMS)] if not city_data.empty else pd.DataFrame(),
+        'relic_data': city_data[city_data['item_id'].isin(RELIC_ITEMS)] if not city_data.empty else pd.DataFrame(),
+        'avalonian_data': city_data[city_data['item_id'].isin(AVALONIAN_ITEMS)] if not city_data.empty else pd.DataFrame()
+    }
+
+def display_price_table(df: pd.DataFrame, title: str, expected_tiers: list):
     """Display a price table for the given DataFrame, showing all expected tiers."""
     # Create a DataFrame with all expected tiers
     all_tiers_df = pd.DataFrame({
@@ -76,10 +96,6 @@ def display_price_table(df: pd.DataFrame, title: str, expected_tiers: list, item
     
     # Add debug section
     with st.expander("Debug Info"):
-        locations = CITIES if city == "Average" else [city]
-        url = f"{BASE_URL}{','.join(item_ids)}.json?locations={','.join(locations)}&qualities=1"
-        st.code(url, language="text")
-        
         st.write("Raw Data Received:")
         if not df.empty:
             st.dataframe(df)
@@ -95,31 +111,49 @@ def display_price_table(df: pd.DataFrame, title: str, expected_tiers: list, item
 def main():
     st.title("🔨 Artifact Foundry Calculator")
     
+    # Initialize session state if not exists
+    if 'all_cities_data' not in st.session_state:
+        with st.spinner("Fetching prices for all cities..."):
+            fetch_all_cities_data()
+    
     # City selection
     st.write("Select City")
     city = st.selectbox(
         "City",
-        ["Average", "Thetford", "Martlock", "Bridgewatch", "Lymhurst", "Fort Sterling", "Caerleon", "Black Market", "Brecilien"],
+        ["Average"] + CITIES,
         key="city"
     )
     
-    # Fetch and display prices for each artifact type
-    with st.spinner("Fetching artifact prices..."):
-        # Runes
-        rune_df = fetch_prices(RUNE_ITEMS, city)
-        display_price_table(rune_df, "Rune Prices", RUNE_ITEMS, RUNE_ITEMS, city)
-        
-        # Souls
-        soul_df = fetch_prices(SOUL_ITEMS, city)
-        display_price_table(soul_df, "Soul Prices", SOUL_ITEMS, SOUL_ITEMS, city)
-        
-        # Relics
-        relic_df = fetch_prices(RELIC_ITEMS, city)
-        display_price_table(relic_df, "Relic Prices", RELIC_ITEMS, RELIC_ITEMS, city)
-        
-        # Avalonian
-        avalonian_df = fetch_prices(AVALONIAN_ITEMS, city)
-        display_price_table(avalonian_df, "Avalonian Shard Prices", AVALONIAN_ITEMS, AVALONIAN_ITEMS, city)
+    # Get data for selected city
+    city_data = get_city_data(city)
+    
+    # Display T4 Avalonian Shard price
+    t4_shard_data = city_data['avalonian_data'][city_data['avalonian_data']['item_id'] == 'T4_SHARD_AVALONIAN']
+    if not t4_shard_data.empty:
+        sell_price = t4_shard_data['sell_price_min'].iloc[0] * 50
+        buy_price = t4_shard_data['buy_price_max'].iloc[0] * 50
+        st.markdown(f"""
+        ### T4 Avalonian Shard (50)
+        - **Sell Order:** {sell_price:,.0f} silver
+        - **Buy Order:** {buy_price:,.0f} silver
+        """)
+    else:
+        st.markdown("""
+        ### T4 Avalonian Shard (50)
+        - **No data available**
+        """)
+    
+    # Display tables using stored data
+    display_price_table(city_data['rune_data'], "Rune Prices", RUNE_ITEMS)
+    display_price_table(city_data['soul_data'], "Soul Prices", SOUL_ITEMS)
+    display_price_table(city_data['relic_data'], "Relic Prices", RELIC_ITEMS)
+    display_price_table(city_data['avalonian_data'], "Avalonian Shard Prices", AVALONIAN_ITEMS)
+    
+    # Add a button to force refresh data
+    if st.button("🔄 Refresh All Data"):
+        with st.spinner("Refreshing prices for all cities..."):
+            fetch_all_cities_data()
+            st.experimental_rerun()
 
 if __name__ == "__main__":
-    main() 
+    main()  
