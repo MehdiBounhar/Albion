@@ -26,7 +26,7 @@ BASE_URL = "https://www.albion-online-data.com/api/v2/stats/prices/"
 RATE_LIMIT_PER_MINUTE = 180
 RATE_LIMIT_PER_5_MINUTES = 300
 MAX_URL_LENGTH = 4096
-BATCH_SIZE = 100  # Number of items to combine in a single request
+BATCH_SIZE = 80  # Number of items to combine in a single request
 
 # Rune Item IDs
 RUNE_ITEMS = [
